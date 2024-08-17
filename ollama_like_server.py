@@ -20,6 +20,7 @@ import os
 import sys
 import hashlib
 from enum import Enum
+import array
 
 
 app = Flask(__name__)
@@ -43,8 +44,7 @@ def capture_and_redirect_browser_logs(driver):
 
 def login_to_venice(username, password):
     global cookies
-    print(f"Logging in to venice as {username}")
-    # initialize the Chrome driver
+    print(f"Logging in to venice...")
     chrome_options = webdriver.ChromeOptions()
     if headless:
         chrome_options.add_argument("--headless")
@@ -192,7 +192,7 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
         buffer = ""
         for chunk in chunks:
             last_data_time = time.time()
-            chunk_str = ''.join(map(chr, chunk))
+            chunk_str = bytes(array.array('B', chunk)).decode('utf-8')
             buffer += chunk_str
             while '\n' in buffer:
                 line, buffer = buffer.split('\n', 1)  # Split at the first newline
