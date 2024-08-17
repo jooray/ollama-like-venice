@@ -4,6 +4,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.webdriver.common.keys import Keys
 import requests
 from flask import Flask, request, Response
 import requests
@@ -17,11 +19,27 @@ import argparse
 import os
 import sys
 import hashlib
+from enum import Enum
 
 
 app = Flask(__name__)
-cookies_lock = Semaphore()
+selenium_lock = Semaphore()
 cookies = {}
+driver = {}
+
+class ResponseFormat(Enum):
+    CHAT = 1
+    GENERATE = 2
+    COMPLETION_AS_STRING = 3
+
+
+def capture_and_redirect_browser_logs(driver):
+    global debug_browser
+    if not debug_browser: return
+    logs = driver.get_log('browser')
+    for entry in logs:
+        print(f"Browser log: {entry['level']} - {entry['message']}", file=sys.stderr)
+
 
 def login_to_venice(username, password):
     global cookies
@@ -30,6 +48,9 @@ def login_to_venice(username, password):
     chrome_options = webdriver.ChromeOptions()
     if headless:
         chrome_options.add_argument("--headless")
+
+    if args.debug_browser:
+        chrome_options.set_capability('goog:loggingPrefs', {'browser': 'ALL'})
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
@@ -61,29 +82,72 @@ def login_to_venice(username, password):
         EC.presence_of_element_located((By.XPATH,
                                         "//button[.//span[contains(text(), 'PRO')]]"))
     )
-    cookies = {cookie['name']: cookie['value'] for cookie in driver.get_cookies()}
-    driver.quit()
-    print("Login successful")
-    return cookies
+    return driver
 
-def generate_streamed_response(data, chat_format=True):
-    # Generate unique IDs
-    unique_id = str(uuid.uuid4())[:23].replace('-', '_')
+def inject_request_interceptor(driver, api_data_json):
+    script = f"""
+    window.streamComplete = false;
+    window.receivedChunks = [];
+    (function(original) {{
+      const apiData = {api_data_json};
+      window.fetch = async function() {{
+        let url = arguments[0];
+        let options = arguments[1];
+
+        if (url.includes('/api/inference/chat') && options.method === 'POST') {{
+          window.fetch = original;
+          let body = JSON.parse(options.body);
+          if ('requestId' in body) {{
+            delete apiData.requestId;
+          }}
+          Object.assign(body, apiData);
+          options.body = JSON.stringify(body);
+          options.headers['Content-Length'] = new Blob([options.body]).size.toString();
+
+
+          // Perform the fetch and get the response
+          const response = await original.apply(this, arguments);
+          const reader = response.body.getReader();
+
+          // Set up a stream for the Python code to read
+          window.responseStream = new ReadableStream({{
+            start(controller) {{
+              function push() {{
+                reader.read().then(({{ done, value }}) => {{
+                  if (done) {{
+                    controller.close();
+                    window.streamComplete = true;
+                    return;
+                  }}
+                  window.receivedChunks.push(value);
+                  controller.enqueue(value);
+                  push();
+                }});
+              }}
+              push();
+            }}
+          }});
+
+          // Return a new response with our custom stream
+          return new Response(window.responseStream, {{
+            headers: response.headers,
+            status: response.status,
+            statusText: response.statusText
+          }});
+        }}
+
+        return original.apply(this, arguments);
+      }};
+    }})(window.fetch);
+    """
+    driver.execute_script(script)
+
+def generate_selenium_streamed_response(data, driver, response_format=ResponseFormat.CHAT):
+    global timeout
     request_id = str(uuid.uuid4())[:8]
-
-    # Extract model_id from the incoming request data
     model_id = data.get('model', 'llama-3.1-405b-akash-api')
     if ':latest' in model_id:
         model_id = model_id.split(':latest')[0]
-
-
-    # Set up the headers and JSON data for the POST request
-    headers = {
-        'Content-Type': 'application/json',
-        'Connection': 'close', # if venice discovers we are using scripts,
-                               # this might be the culprint, this is not standard
-        'Referer': f'https://venice.ai/chat/{unique_id}'
-    }
 
     api_data = {
         "requestId": request_id,
@@ -95,95 +159,101 @@ def generate_streamed_response(data, chat_format=True):
         "topP": 0.9
     }
 
-    print(f"Sending request to venice with content: {api_data}")
+    api_data_json = json.dumps(api_data)
 
-    url = 'https://venice.ai/api/inference/chat'
+    driver.get('https://venice.ai/chat')
+    WebDriverWait(driver, selenium_timeout).until(
+        EC.element_to_be_clickable((By.XPATH,
+                                    "//button[.//p[contains(text(), 'Text Conversation')]]"))
+    ).click()
 
-    # Send the POST request using the cookies extracted from Selenium
-    session = requests.Session()
+    textarea = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.XPATH, "//textarea[@placeholder='Ask a question...']"))
+    )
+
+    # just send space to enable the input box, we'll intercept the request
+    # and replace it in flight (i.e. black magic)
+    textarea.send_keys(" ")
+
+    inject_request_interceptor(driver, api_data_json)
+
+    WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' and @aria-label='submit']"))
+    ).click()
+
+
+
     start_time = datetime.now(timezone.utc)
 
-    try:
-        with cookies_lock:
-            global cookies
-            global timeout
+    eval_count = 0
+    last_data_time = time.time()
+    while True:
+        chunks = driver.execute_script("return window.receivedChunks.splice(0, window.receivedChunks.length);")
+        buffer = ""
+        for chunk in chunks:
+            last_data_time = time.time()
+            chunk_str = ''.join(map(chr, chunk))
+            buffer += chunk_str
+            while '\n' in buffer:
+                line, buffer = buffer.split('\n', 1)  # Split at the first newline
+                if line:
+                    try:
+                        json_data = json.loads(line)
+                        if json_data.get('kind') == 'content':
+                            message = None
+                            eval_count += 1
 
-            should_retry = True
-            delay = 1
-            max_delay = 16
-            response = None
-            while should_retry:
-                should_retry = False
-                response = session.post(url, headers=headers, data=json.dumps(api_data), cookies=cookies, stream=True, timeout=(None, timeout))
+                            if response_format == ResponseFormat.CHAT:
+                                message = {
+                                    "model": model_id,
+                                    "created_at": datetime.utcnow().isoformat() + "Z",
+                                    "message": {"role": "assistant", "content": json_data.get('content', '')},
+                                    "done": False
+                                }
+                                yield f"{json.dumps(message)}\r\n"
+                            elif response_format == ResponseFormat.GENERATE:
+                                message = {
+                                    "model": model_id,
+                                    "created_at": datetime.utcnow().isoformat() + "Z",
+                                    "response": json_data.get('content', ''),
+                                    "done": False
+                                }
+                                yield f"{json.dumps(message)}\r\n"
+                            elif response_format == ResponseFormat.COMPLETION_AS_STRING:
+                                yield json_data.get('content', '')
+                        else:
+                            print(f"Got a message of kind {json_data.get('kind')}:\n{line}")
+                    except json.JSONDecodeError:
+                        print(f"Failed to parse line: {line}")
 
-                if response.status_code == 429:
-                    print("Got too many requests, trying a new login...")
-                    time.sleep(delay)
-                    delay = delay * 2
-                    if delay <= max_delay:
-                        should_retry = True
-                    cookies = login_to_venice(username, password)
+        if driver.execute_script("return window.streamComplete;"):
+            break
+        if time.time() - last_data_time > timeout:
+            print(f"Timeout: No data received for {timeout} seconds. Exiting loop.")
+            break
+        time.sleep(0.1)
 
-            if response.status_code != 200:
-                print(f"Error: {response.status_code}")
-                print(f"Reason: {response.reason}")
-                raise Exception(f"Request failed with status code {response.status_code}")
+    capture_and_redirect_browser_logs(driver)
 
-            cookies.update(response.cookies)
+    if (response_format == ResponseFormat.CHAT) or (response_format == ResponseFormat.GENERATE):
+        end_time = datetime.now(timezone.utc)
+        duration = int((end_time - start_time).total_seconds() * 1e9)  # nanoseconds
 
-        eval_count = 0
+        final_message = {
+            "model": model_id,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "message": {"role": "assistant", "content": ""},
+            "done_reason": "stop",
+            "done": True,
+            "total_duration": duration,
+            "load_duration": duration,
+            "prompt_eval_count": eval_count,
+            "prompt_eval_duration": duration,
+            "eval_count": eval_count,
+            "eval_duration": duration
+        }
 
-        for line in response.iter_lines():
-            if line:
-                json_data = json.loads(line.decode('utf-8'))
-                kind = json_data.get('kind')
-
-                if kind == 'content':
-                    eval_count += 1
-                    message = None
-                    if chat_format:
-                        message = {
-                            "model": model_id,
-                            "created_at": datetime.utcnow().isoformat() + "Z",
-                            "message": {"role": "assistant", "content": json_data.get('content', '')},
-                            "done": False
-                        }
-                    else:
-                        message = {
-                            "model": model_id,
-                            "created_at": datetime.utcnow().isoformat() + "Z",
-                            "response": json_data.get('content', ''),
-                            "done": False
-                        }
-
-                    yield f"{json.dumps(message)}\r\n"
-                else:
-                    print(f"Got a message of kind {kind}:\n{line}")
-    except requests.Timeout:
-        print("Timeout while reading...")
-        return
-
-    # Once the stream is finished, calculate the durations and prepare the final message
-    end_time = datetime.now(timezone.utc)
-    duration = int((end_time - start_time).total_seconds() * 1e9)  # nanoseconds
-
-    final_message = {
-        "model": model_id,
-        "created_at": datetime.utcnow().isoformat() + "Z",
-        "message": {"role": "assistant", "content": ""},
-        "done_reason": "stop",
-        "done": True,
-        "total_duration": duration,
-        "load_duration": duration,
-        "prompt_eval_count": eval_count,
-        "prompt_eval_duration": duration,
-        "eval_count": eval_count,
-        "eval_duration": duration
-    }
-
-    response.close()
-
-    yield f"{json.dumps(final_message)}\r\n"
+        yield f"{json.dumps(final_message)}"
 
 def parse_json_request(request):
     content_type = request.headers.get('Content-Type')
@@ -199,28 +269,79 @@ def parse_json_request(request):
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
+    global driver
     request_json = parse_json_request(request)
     if request_json is None :
             return Response("Invalid JSON data received", status=400, content_type='text/plain')
-    return Response(generate_streamed_response(request_json, chat_format=True), content_type='application/x-ndjson')
+    with selenium_lock:
+        return Response(generate_selenium_streamed_response(request_json, driver, response_format=ResponseFormat.CHAT), content_type='application/x-ndjson')
 
 @app.route('/api/generate', methods=['POST'])
 def generate():
+    global driver
     request_json = parse_json_request(request)
     if request_json is None :
         return Response("Invalid JSON data received", status=400, content_type='text/plain')
 
-    request_json["messages"] = [
-        {
-            "role": "user",
-            "content": f"This will be a completion request. Act as an AI that continues with the request, not as a chatbot. After the prompt ends, just continue with tokens that would follow. Instructions for you are in [INST]...[/INST]{request_json['prompt']}"
+    prompt = request_json.pop('prompt')
+
+    if '[INST]' in prompt:
+        inst_start = prompt.find('[INST]')
+        inst_end = prompt.find('[/INST]')
+
+        instructions = prompt[inst_start + 6:inst_end]
+        response = prompt[inst_end + 7:]
+        request_json["messages"] = [
+            {
+                "role": "user",
+                "content": instructions.strip()
+            },
+            {
+                "role": "assistant",
+                "content": response.strip()
+            }
+        ]
+    else:
+        request_json["messages"] = [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    with selenium_lock:
+        return Response(generate_selenium_streamed_response(request_json, driver, response_format=ResponseFormat.GENERATE), content_type='application/x-ndjson')
+
+@app.route('/v1/chat/completions', methods=['POST'])
+def openai_like_completion():
+    request_json = parse_json_request(request)
+    completion = ''.join(generate_selenium_streamed_response(request_json, driver, response_format=ResponseFormat.COMPLETION_AS_STRING))
+    response_json = {
+        "id": "chatcmpl-953",
+        "object": "chat.completion",
+        "created": int(datetime.now().timestamp()),
+        "model": request_json["model"],
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+            {
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": completion
+            },
+            "finish_reason": "stop"
+            }
+        ]
         }
-    ]
-    return Response(generate_streamed_response(request_json, chat_format=False), content_type='application/x-ndjson')
+    return Response(json.dumps(response_json), mimetype='application/json')
+
+
+
+
+
 
 @app.route('/api/version', methods=['GET'])
 def version():
-    return Response(json.dumps({"version":"0.2.5"}), content_type='application/json')
+    return Response(json.dumps({"version":"0.3.6"}), content_type='application/json')
 
 def get_mock_model(name, parameter_size):
     return {
@@ -291,6 +412,8 @@ def mock_show():
         }
     return show_response
 
+## main code
+
 parser = argparse.ArgumentParser(description='Ollama-like API for venice.ai')
 
 # Mandatory arguments (USERNAME and PASSWORD)
@@ -300,9 +423,11 @@ parser.add_argument('--password', type=str, required=False, help='Venice passwor
 # Optional arguments with defaults
 parser.add_argument('--host', type=str, default='127.0.0.1', help='Local host address')
 parser.add_argument('--port', type=int, default=9999, help='Server port')
-parser.add_argument('--timeout', type=int, default=42, help='Timeout for generating tokens from Venice (seconds)')
+parser.add_argument('--timeout', type=int, default=20, help='Timeout for generating tokens from Venice (seconds)')
 parser.add_argument('--selenium-timeout', type=int, default=60, help='Selenium timeout (seconds)')
 parser.add_argument('--headless', action='store_true', default=True, help='Run Selenium in headless mode')
+parser.add_argument('--no-headless', action='store_false', dest='headless', help='Disable headless mode and run with a visible browser window')
+parser.add_argument('--debug-browser', action='store_true', default=False, help='Enable browser debugging logs')
 
 args = parser.parse_args()
 
@@ -317,8 +442,9 @@ if not username or not password:
 timeout=args.timeout
 selenium_timeout=args.selenium_timeout
 headless = args.headless
+debug_browser= args.debug_browser
 
-cookies = login_to_venice(username, password)
+driver = login_to_venice(username, password)
 print(f"Starting server at port {args.host}:{args.port}")
 http_server = WSGIServer((args.host, args.port), app)
 http_server.serve_forever()
