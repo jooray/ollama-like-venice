@@ -6,6 +6,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import WebDriverException
 import requests
 from flask import Flask, request, Response
 import requests
@@ -43,7 +44,7 @@ def capture_and_redirect_browser_logs(driver):
 
 
 def login_to_venice(username, password):
-    global cookies
+    global cookies, driver
     print(f"Logging in to venice...")
     chrome_options = webdriver.ChromeOptions()
     if headless:
@@ -82,6 +83,7 @@ def login_to_venice(username, password):
         EC.presence_of_element_located((By.XPATH,
                                         "//button[.//span[contains(text(), 'PRO')]]"))
     )
+    print(f"Logged in as {username}")
     return driver
 
 def inject_request_interceptor(driver, api_data_json):
@@ -160,100 +162,111 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
     }
 
     api_data_json = json.dumps(api_data)
+    try:
+        driver.get('https://venice.ai/chat')
+        WebDriverWait(driver, selenium_timeout).until(
+            EC.element_to_be_clickable((By.XPATH,
+                                        "//button[.//p[contains(text(), 'Text Conversation')]]"))
+        ).click()
 
-    driver.get('https://venice.ai/chat')
-    WebDriverWait(driver, selenium_timeout).until(
-        EC.element_to_be_clickable((By.XPATH,
-                                    "//button[.//p[contains(text(), 'Text Conversation')]]"))
-    ).click()
+        textarea = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//textarea[@placeholder='Ask a question...']"))
+        )
 
-    textarea = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.XPATH, "//textarea[@placeholder='Ask a question...']"))
-    )
+        # just send space to enable the input box, we'll intercept the request
+        # and replace it in flight (i.e. black magic)
+        textarea.send_keys(" ")
 
-    # just send space to enable the input box, we'll intercept the request
-    # and replace it in flight (i.e. black magic)
-    textarea.send_keys(" ")
+        inject_request_interceptor(driver, api_data_json)
 
-    inject_request_interceptor(driver, api_data_json)
-
-    WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' and @aria-label='submit']"))
-    ).click()
+        WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' and @aria-label='submit']"))
+        ).click()
 
 
 
-    start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(timezone.utc)
 
-    eval_count = 0
-    last_data_time = time.time()
-    while True:
-        chunks = driver.execute_script("return window.receivedChunks.splice(0, window.receivedChunks.length);")
-        buffer = ""
-        for chunk in chunks:
-            last_data_time = time.time()
-            chunk_str = bytes(array.array('B', chunk)).decode('utf-8')
-            buffer += chunk_str
-            while '\n' in buffer:
-                line, buffer = buffer.split('\n', 1)  # Split at the first newline
-                if line:
-                    try:
-                        json_data = json.loads(line)
-                        if json_data.get('kind') == 'content':
-                            message = None
-                            eval_count += 1
+        eval_count = 0
+        last_data_time = time.time()
+        while True:
+            chunks = driver.execute_script("return window.receivedChunks.splice(0, window.receivedChunks.length);")
+            buffer = ""
+            for chunk in chunks:
+                last_data_time = time.time()
+                chunk_str = bytes(array.array('B', chunk)).decode('utf-8')
+                buffer += chunk_str
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)  # Split at the first newline
+                    if line:
+                        try:
+                            json_data = json.loads(line)
+                            if json_data.get('kind') == 'content':
+                                message = None
+                                eval_count += 1
 
-                            if response_format == ResponseFormat.CHAT:
-                                message = {
-                                    "model": model_id,
-                                    "created_at": datetime.utcnow().isoformat() + "Z",
-                                    "message": {"role": "assistant", "content": json_data.get('content', '')},
-                                    "done": False
-                                }
-                                yield f"{json.dumps(message)}\r\n"
-                            elif response_format == ResponseFormat.GENERATE:
-                                message = {
-                                    "model": model_id,
-                                    "created_at": datetime.utcnow().isoformat() + "Z",
-                                    "response": json_data.get('content', ''),
-                                    "done": False
-                                }
-                                yield f"{json.dumps(message)}\r\n"
-                            elif response_format == ResponseFormat.COMPLETION_AS_STRING:
-                                yield json_data.get('content', '')
-                        else:
-                            print(f"Got a message of kind {json_data.get('kind')}:\n{line}")
-                    except json.JSONDecodeError:
-                        print(f"Failed to parse line: {line}")
+                                if response_format == ResponseFormat.CHAT:
+                                    message = {
+                                        "model": model_id,
+                                        "created_at": datetime.utcnow().isoformat() + "Z",
+                                        "message": {"role": "assistant", "content": json_data.get('content', '')},
+                                        "done": False
+                                    }
+                                    yield f"{json.dumps(message)}\r\n"
+                                elif response_format == ResponseFormat.GENERATE:
+                                    message = {
+                                        "model": model_id,
+                                        "created_at": datetime.utcnow().isoformat() + "Z",
+                                        "response": json_data.get('content', ''),
+                                        "done": False
+                                    }
+                                    yield f"{json.dumps(message)}\r\n"
+                                elif response_format == ResponseFormat.COMPLETION_AS_STRING:
+                                    yield json_data.get('content', '')
+                            else:
+                                print(f"Got a message of kind {json_data.get('kind')}:\n{line}")
+                        except json.JSONDecodeError:
+                            print(f"Failed to parse line: {line}")
 
-        if driver.execute_script("return window.streamComplete;"):
-            break
-        if time.time() - last_data_time > timeout:
-            print(f"Timeout: No data received for {timeout} seconds. Exiting loop.")
-            break
-        time.sleep(0.1)
+            if driver.execute_script("return window.streamComplete;"):
+                break
+            if time.time() - last_data_time > timeout:
+                print(f"Timeout: No data received for {timeout} seconds. Exiting loop.")
+                break
+            time.sleep(0.1)
 
-    capture_and_redirect_browser_logs(driver)
+        capture_and_redirect_browser_logs(driver)
 
-    if (response_format == ResponseFormat.CHAT) or (response_format == ResponseFormat.GENERATE):
-        end_time = datetime.now(timezone.utc)
-        duration = int((end_time - start_time).total_seconds() * 1e9)  # nanoseconds
+        if (response_format == ResponseFormat.CHAT) or (response_format == ResponseFormat.GENERATE):
+            end_time = datetime.now(timezone.utc)
+            duration = int((end_time - start_time).total_seconds() * 1e9)  # nanoseconds
 
-        final_message = {
-            "model": model_id,
-            "created_at": datetime.utcnow().isoformat() + "Z",
-            "message": {"role": "assistant", "content": ""},
-            "done_reason": "stop",
-            "done": True,
-            "total_duration": duration,
-            "load_duration": duration,
-            "prompt_eval_count": eval_count,
-            "prompt_eval_duration": duration,
-            "eval_count": eval_count,
-            "eval_duration": duration
-        }
+            final_message = {
+                "model": model_id,
+                "created_at": datetime.utcnow().isoformat() + "Z",
+                "message": {"role": "assistant", "content": ""},
+                "done_reason": "stop",
+                "done": True,
+                "total_duration": duration,
+                "load_duration": duration,
+                "prompt_eval_count": eval_count,
+                "prompt_eval_duration": duration,
+                "eval_count": eval_count,
+                "eval_duration": duration
+            }
 
-        yield f"{json.dumps(final_message)}"
+            yield f"{json.dumps(final_message)}"
+    except WebDriverException as e:
+        print(f"Error occurred during chat: {e}")
+        try:
+            driver.quit()
+        except WebDriverException as e:
+            print(f"Error occurred while quitting WebDriver: {e}")
+
+        driver = login_to_venice(username, password)
+        if driver:
+            yield from generate_selenium_streamed_response(data, driver, response_format)
+
 
 def parse_json_request(request):
     content_type = request.headers.get('Content-Type')

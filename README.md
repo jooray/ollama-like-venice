@@ -82,13 +82,31 @@ options:
   --debug-browser       Enable browser debugging logs
 ```
 
+## Troubleshooting
+
+If you get WebDriver errors, first make sure that you can run the Chrome binary from the command line.
+
+Replace `/path/to/your/google-chrome` with your path to Chrome.
+
+```bash
+/path/to/your/google-chrome e --headless --disable-gpu --dump-dom https://bitcoin.org/ | head -n 20 | grep "Bitcoin"
+```
+
+The output should be something like:
+```html
+<title>Bitcoin - Open source P2P money</title>
+<meta name="description" content="Bitcoin is an innovative payment network and a new kind of money. Find all you need to know and get started with Bitcoin on bitcoin.org.">
+```
+
+If it does not work, use your operating system's package manager to install Chrome and all the required libraries.
+
 ## Setting up Open-WebUI
 
 Now you can use the provided API with [Open-WebUI](https://openwebui.com/). Install it [according to the instructions](https://docs.openwebui.com/getting-started/).
 
 After login to the Open-WebUI interface, click on your account (top right icon), then click on Admin Panel, choose the Settings tab, go to Connections.
 Under the Ollama API either change the URL (if you don't run local Ollama), or
-click "+" to add new entry and type in http://localhost:9999 (adjust the port
+click "+" to add new entry and type in http://127.0.0.1:9999 (adjust the port
 to match your local server configuration, 9999 is just default).
 
 Then click on the arrows icon, which will verify the connection. If everything is ok, you should see the new models under new chat - the models are
