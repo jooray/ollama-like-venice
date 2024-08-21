@@ -107,7 +107,12 @@ Now you can use the provided API with [Open-WebUI](https://openwebui.com/). Inst
 After login to the Open-WebUI interface, click on your account (top right icon), then click on Admin Panel, choose the Settings tab, go to Connections.
 Under the Ollama API either change the URL (if you don't run local Ollama), or
 click "+" to add new entry and type in http://127.0.0.1:9999 (adjust the port
-to match your local server configuration, 9999 is just default).
+to match your local server configuration, 9999 is just default). 
+
+**Note**: If it does not work, make sure you put http://127.0.0.1:9999 and
+**not** localhost, the library used by Open-WebUI sometimes has trouble with
+resolving, especially if you have both ipv4 and ipv6 host entries for localhost.
+Also, make sure you are using http, not https.
 
 Then click on the arrows icon, which will verify the connection. If everything is ok, you should see the new models under new chat - the models are
 "llama-3.1-405b-akash-api", "hermes-2-theta-web", "dogge-llama-3-70b". 
