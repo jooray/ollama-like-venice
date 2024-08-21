@@ -102,7 +102,28 @@ If it does not work, use your operating system's package manager to install Chro
 
 ## Setting up Open-WebUI
 
-Now you can use the provided API with [Open-WebUI](https://openwebui.com/). Install it [according to the instructions](https://docs.openwebui.com/getting-started/).
+Now you can use the provided API with [Open-WebUI](https://openwebui.com/). You can install it [according to the instructions](https://docs.openwebui.com/getting-started/), but I think this is simpler and works better:
+
+### Installation
+
+```bash
+mkdir open-webui && cd open-webui
+python -m venv venv
+source venv/bin/activate
+pip install open-webui
+```
+
+### Running
+
+```bash
+cd open-webui
+source venv/bin/activate
+ENABLE_RAG_WEB_SEARCH=true RAG_WEB_SEARCH_ENGINE=duckduckgo open-webui serve --port 8082
+```
+
+Now open-webui should listen on http://127.0.0.1:8082/, visit it through the browser.
+
+### Setting up venice through ollama-like proxy
 
 After login to the Open-WebUI interface, click on your account (top right icon), then click on Admin Panel, choose the Settings tab, go to Connections.
 Under the Ollama API either change the URL (if you don't run local Ollama), or
@@ -118,6 +139,7 @@ Then click on the arrows icon, which will verify the connection. If everything i
 "llama-3.1-405b-akash-api", "hermes-2-theta-web", "dogge-llama-3-70b". 
 
 Hermes-2-theta has access to web search, llama-3.1-405b is the currently best open model.
+Note that you can also access web through "#" command in open-webui prompt.
 
 ## Setting up continue.dev
 
