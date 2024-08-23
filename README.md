@@ -84,6 +84,8 @@ options:
 
 ## Troubleshooting
 
+### WebDriver errors - check if Chrome is installed and working
+
 If you get WebDriver errors, first make sure that you can run the Chrome binary from the command line.
 
 Replace `/path/to/your/google-chrome` with your path to Chrome.
@@ -99,6 +101,12 @@ The output should be something like:
 ```
 
 If it does not work, use your operating system's package manager to install Chrome and all the required libraries.
+
+### Can't login to venice
+
+Make sure your password does not contain special characters. If you do, change it to password containing letters and numbers only - it can be long. I don't know why, but sometimes Selenium does not type these characters correctly.
+
+Also you can try running ollama-live-venice with `--no-headless` flag to see what is happening in the Chrome window.
 
 ## Setting up Open-WebUI
 
@@ -118,17 +126,19 @@ pip install open-webui
 ```bash
 cd open-webui
 source venv/bin/activate
-ENABLE_RAG_WEB_SEARCH=true RAG_WEB_SEARCH_ENGINE=duckduckgo open-webui serve --port 8082
+ENABLE_RAG_WEB_SEARCH=true RAG_WEB_SEARCH_ENGINE=duckduckgo OLLAMA_BASE_URL="http://127.0.0.1:9999" open-webui serve --port 8082
 ```
 
 Now open-webui should listen on http://127.0.0.1:8082/, visit it through the browser.
+
+If you run local ollama, you can omit the OLLAMA_BASE_URL part and set it via the web interface - see below.
 
 ### Setting up venice through ollama-like proxy
 
 After login to the Open-WebUI interface, click on your account (top right icon), then click on Admin Panel, choose the Settings tab, go to Connections.
 Under the Ollama API either change the URL (if you don't run local Ollama), or
 click "+" to add new entry and type in http://127.0.0.1:9999 (adjust the port
-to match your local server configuration, 9999 is just default). 
+to match your local server configuration, 9999 is just default). If you set it through OLLAMA_BASE_URL above, the it might be already set correctly.
 
 **Note**: If it does not work, make sure you put http://127.0.0.1:9999 and
 **not** localhost, the library used by Open-WebUI sometimes has trouble with
