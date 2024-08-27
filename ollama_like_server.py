@@ -201,7 +201,7 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
                     if line:
                         try:
                             json_data = json.loads(line)
-                            if json_data.get('kind') == 'content':
+                            if json_data.get('kind') == 'content' and len(json_data.get('content', '')) > 0:
                                 message = None
                                 eval_count += 1
 
@@ -223,8 +223,8 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
                                     yield f"{json.dumps(message)}\r\n"
                                 elif response_format == ResponseFormat.COMPLETION_AS_STRING:
                                     yield json_data.get('content', '')
-                            else:
-                                print(f"Got a message of kind {json_data.get('kind')}:\n{line}")
+                            elif len(json_data.get('content', '')) > 0:
+                                print(f"Got an unknown message of kind {json_data.get('kind')}:\n{line}")
                         except json.JSONDecodeError:
                             print(f"Failed to parse line: {line}")
 
