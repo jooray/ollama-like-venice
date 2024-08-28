@@ -379,7 +379,7 @@ def tags():
         "models": [
             get_mock_model("llama-3.1-405b-akash-api:latest", "405B"),
             get_mock_model("hermes-2-theta-web:latest", "8B"),
-            get_mock_model("dogge-llama-3-70b:latest", "70B")
+            get_mock_model("nous-hermes-8-web:latest", "8B")
         ]}
     return Response(json.dumps(tags_response), content_type='application/json')
 
