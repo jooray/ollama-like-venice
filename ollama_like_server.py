@@ -7,9 +7,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import WebDriverException
-import requests
+from selenium.common.exceptions import TimeoutException
 from flask import Flask, request, Response
-import requests
 import json
 import uuid
 from datetime import datetime, timezone
@@ -77,12 +76,27 @@ def login_to_venice(username, password):
                                     "//button[.//p[contains(text(), 'Text Conversation')]]"))
     )
 
+    max_attempts = 3
+    attempt = 0
+
     # Wait for the account button to contain the "PRO" span (to make sure
     # venice realized we are a pro user)
-    WebDriverWait(driver, selenium_timeout).until(
-        EC.presence_of_element_located((By.XPATH,
-                                        "//button[.//span[contains(text(), 'PRO')]]"))
-    )
+    while attempt < max_attempts:
+        try:
+            WebDriverWait(driver, selenium_timeout).until(
+                EC.presence_of_element_located((By.XPATH,
+                                                "//button[.//span[contains(text(), 'PRO')]]"))
+            )
+            break
+        except TimeoutException:
+            if attempt < max_attempts - 1:
+                print(f"PRO span not found. Refreshing... (Attempt {attempt + 1}/{max_attempts})")
+                driver.refresh()
+            attempt += 1
+
+    if attempt == max_attempts:
+        raise TimeoutException("PRO span not found after maximum refresh attempts")
+
     print(f"Logged in as {username}")
     return driver
 
@@ -437,7 +451,7 @@ parser.add_argument('--password', type=str, required=False, help='Venice passwor
 parser.add_argument('--host', type=str, default='127.0.0.1', help='Local host address')
 parser.add_argument('--port', type=int, default=9999, help='Server port')
 parser.add_argument('--timeout', type=int, default=20, help='Timeout for generating tokens from Venice (seconds)')
-parser.add_argument('--selenium-timeout', type=int, default=60, help='Selenium timeout (seconds)')
+parser.add_argument('--selenium-timeout', type=int, default=20, help='Selenium timeout (seconds)')
 parser.add_argument('--headless', action='store_true', default=True, help='Run Selenium in headless mode')
 parser.add_argument('--no-headless', action='store_false', dest='headless', help='Disable headless mode and run with a visible browser window')
 parser.add_argument('--debug-browser', action='store_true', default=False, help='Enable browser debugging logs')
