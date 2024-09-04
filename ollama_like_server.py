@@ -3,6 +3,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.os_manager import ChromeType
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.common.keys import Keys
@@ -42,17 +43,60 @@ def capture_and_redirect_browser_logs(driver):
         print(f"Browser log: {entry['level']} - {entry['message']}", file=sys.stderr)
 
 
-def login_to_venice(username, password):
-    global cookies, driver
-    print(f"Logging in to venice...")
+def get_webdriver(headless=True, debug_browser=False, docker=False):
     chrome_options = webdriver.ChromeOptions()
     if headless:
         chrome_options.add_argument("--headless")
-
-    if args.debug_browser:
+    if debug_browser:
         chrome_options.set_capability('goog:loggingPrefs', {'browser': 'ALL'})
+    if docker:
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    # Check if system-wide chromedriver exists
+    system_chromedriver = "/usr/bin/chromedriver"
+    if os.path.exists(system_chromedriver) and os.access(system_chromedriver, os.X_OK):
+        print(f"Using system-wide chromedriver: {system_chromedriver}")
+        service = Service(system_chromedriver)
+
+        # Try to use Chromium first
+        try:
+            chrome_options.binary_location = "/usr/bin/chromium"
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            print("Using Chromium")
+            return driver
+        except WebDriverException as e:
+            print(f"Chromium initialization failed: {e}")
+
+        # If Chromium fails, try Chrome
+        try:
+            chrome_options.binary_location = None  # Reset binary location
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            print("Using Google Chrome")
+            return driver
+        except WebDriverException as e:
+            print(f"Chrome initialization failed: {e}")
+    else:
+        # Use ChromeDriverManager to install
+        try:
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+            return driver
+        except WebDriverException:
+            print("Chrome not found, trying Chromium")
+
+        try:
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()), options=chrome_options)
+            return driver
+        except WebDriverException as e:
+            print(f"Chromium error occurred: {e}")
+
+    raise Exception("Neither Chrome nor Chromium could be initialized. Please make sure one of them is installed.")
+
+
+def login_to_venice(username, password):
+    global cookies, driver, args
+    print(f"Logging in to venice...")
+    driver = get_webdriver(headless=args.headless, debug_browser=args.debug_browser, docker=args.docker)
 
     driver.get("https://venice.ai/sign-in")
     driver.find_element("id", "identifier").send_keys(username)
@@ -455,6 +499,7 @@ parser.add_argument('--selenium-timeout', type=int, default=20, help='Selenium t
 parser.add_argument('--headless', action='store_true', default=True, help='Run Selenium in headless mode')
 parser.add_argument('--no-headless', action='store_false', dest='headless', help='Disable headless mode and run with a visible browser window')
 parser.add_argument('--debug-browser', action='store_true', default=False, help='Enable browser debugging logs')
+parser.add_argument('--docker', action='store_true', default=False, help='Do not run Chrome sandbox (required for docker)')
 
 args = parser.parse_args()
 
@@ -468,8 +513,7 @@ if not username or not password:
 
 timeout=args.timeout
 selenium_timeout=args.selenium_timeout
-headless = args.headless
-debug_browser= args.debug_browser
+debug_browser = args.debug_browser
 
 driver = login_to_venice(username, password)
 print(f"Starting server at port {args.host}:{args.port}")

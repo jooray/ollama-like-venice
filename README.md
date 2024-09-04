@@ -2,6 +2,7 @@
 
 - [Introduction](#introduction)
 - [Installation](#installation)
+- [Installation through Docker](#installation-through-docker)
 - [Usage](#usage)
 - [Setting up Open-WebUI](#setting-up-open-webui)
 - [Setting up continue.dev](#setting-up-continuedev)
@@ -40,6 +41,17 @@ Install the required dependencies
 ```bash
 pip install -r requirements.txt
 ```
+
+## Installation through Docker
+
+If you would rather install this through Docker, follow these steps:
+
+```bash
+docker build -t ollama-like-api-for-venice .
+docker run -p 9999:9999 -e VENICE_USERNAME="USERNAME" -e VENICE_PASSWORD="PASSWORD" ollama-like-api-for-venice
+```
+
+Note that docker support is currently beta.
 
 ## Usage
 
