@@ -70,7 +70,7 @@ def get_webdriver(headless=True, debug_browser=False, docker=False):
 
         # If Chromium fails, try Chrome
         try:
-            chrome_options.binary_location = None  # Reset binary location
+            chrome_options.binary_location = ""
             driver = webdriver.Chrome(service=service, options=chrome_options)
             print("Using Google Chrome")
             return driver
@@ -81,8 +81,8 @@ def get_webdriver(headless=True, debug_browser=False, docker=False):
         try:
             driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
             return driver
-        except WebDriverException:
-            print("Chrome not found, trying Chromium")
+        except WebDriverException as e:
+            print(f"Chrome not found ({e}), trying Chromium")
 
         try:
             driver = webdriver.Chrome(service=Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()), options=chrome_options)
