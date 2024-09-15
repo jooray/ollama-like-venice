@@ -12,6 +12,16 @@
 
 This project simulates the Ollama API using Venice.ai's text generation capabilities, allowing users to access a lifetime Pro account without token fees, usage costs, or subscriptions. The project uses Selenium automation framework to interact with Venice in a clever way, making it suitable for personal inference and integration with IDEs and LLM front-ends.
 
+## Venice Pro accounts for sale
+
+If you would become a lifetime Pro user on Venice, head over to the 
+[original crowdfunding page](https://pay.cypherpunk.today/apps/26zEBNn6FGAkzvVVuDMz3SXrKJLU/crowdfund), the pro accounts are still on sale.
+
+Please note that currently they are seed-based (not e-mail/password), so they can't be used 
+with this code. I am trying to solve this (if you'd like to contribute code, send me pull 
+request).
+
+
 ## Installation
 
 To install the project, follow these steps:
@@ -213,13 +223,4 @@ locally. The embeddings model is used for indexing your codebase and then provid
 
 Embeddings are very lightweight, so they can run locally on almost any hardware.
 
-## Venice Pro accounts for sale
-
-If you would become a lifetime Pro user, head over to the [original crowdfunding page]
-(https://pay.cypherpunk.today/apps/26zEBNn6FGAkzvVVuDMz3SXrKJLU/crowdfund),
-the pro accounts are still on sale.
-
-Please note that currently they are seed-based (not e-mail/password), so they can't be used 
-with this code. I am trying to solve this (if you'd like to contribute code, send me pull 
-request).
 
