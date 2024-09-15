@@ -213,9 +213,13 @@ locally. The embeddings model is used for indexing your codebase and then provid
 
 Embeddings are very lightweight, so they can run locally on almost any hardware.
 
-## Contributing
+## Venice Pro accounts for sale
 
-This project is currently crowdfunded, and the code will be released as a FOSS project on GitHub once the funding goal is reached. If you're interested in contributing to the project now, send patches to me, if you are OK with the code being released possibly later, under a permissive license.
+If you would become a lifetime Pro user, head over to the [original crowdfunding page]
+(https://pay.cypherpunk.today/apps/26zEBNn6FGAkzvVVuDMz3SXrKJLU/crowdfund),
+the pro accounts are still on sale.
 
-I would appreciate if you have directed your friends to the [crowdfunding page](https://pay.cypherpunk.today/apps/26zEBNn6FGAkzvVVuDMz3SXrKJLU/crowdfund
-)
+Please note that currently they are seed-based (not e-mail/password), so they can't be used 
+with this code. I am trying to solve this (if you'd like to contribute code, send me pull 
+request).
+
