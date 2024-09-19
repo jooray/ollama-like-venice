@@ -113,7 +113,7 @@ If you get WebDriver errors, first make sure that you can run the Chrome binary 
 Replace `/path/to/your/google-chrome` with your path to Chrome.
 
 ```bash
-/path/to/your/google-chrome e --headless --disable-gpu --dump-dom https://bitcoin.org/ | head -n 20 | grep "Bitcoin"
+/path/to/your/google-chrome --headless --disable-gpu --dump-dom https://bitcoin.org/ | head -n 20 | grep "Bitcoin"
 ```
 
 The output should be something like:
