@@ -484,7 +484,22 @@ def inject_request_interceptor(driver, api_data_json):
       }};
     }})(window.fetch);
     """
+    print("Executing script")
+    driver.execute_script('console.log("before");')
     driver.execute_script(script)
+    driver.execute_script('console.log("after");')
+
+def presence_of_either_element_located(locators):
+    def _predicate(driver):
+        for locator in locators:
+            try:
+                element = driver.find_element(*locator)
+                if element.is_displayed():
+                    return element
+            except:
+                pass
+        return False
+    return _predicate
 
 def generate_selenium_streamed_response(data, driver, response_format=ResponseFormat.CHAT):
     global timeout
@@ -505,34 +520,56 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
 
     api_data_json = json.dumps(api_data)
     try:
-        driver.get('https://venice.ai/chat')
-        WebDriverWait(driver, selenium_timeout).until(
-            EC.element_to_be_clickable((By.XPATH,
-                                        "//button[.//p[contains(text(), 'Text Conversation')]]"))
-        ).click()
+        if not driver.current_url.startswith('https://venice.ai/chat'):
+            driver.get('https://venice.ai/chat')
 
-        textarea = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//textarea[@placeholder='Ask a question...']"))
+        element = WebDriverWait(driver, selenium_timeout).until(
+            presence_of_either_element_located((
+                (By.XPATH, "//button[.//p[contains(text(), 'Text Conversation')]]"),
+                (By.XPATH, "//textarea[contains(@placeholder, 'Ask a question')]")
+            ))
         )
 
-        # just send space to enable the input box, we'll intercept the request
-        # and replace it in flight (i.e. black magic)
-        textarea.send_keys(" ")
+        if element.tag_name == 'button':
+            element.click()
+            element = WebDriverWait(driver, selenium_timeout).until(
+                EC.presence_of_element_located((By.XPATH, "//textarea[contains(@placeholder, 'Ask a question')]"))
+            )
+        element.send_keys(" ")
+
+        current_url = driver.current_url
+
+        # If we are on the main chat page, the button will navigate us to a different url first
+        if current_url == 'https://venice.ai/chat':
+            WebDriverWait(driver, selenium_timeout).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' and @aria-label='submit']"))
+            ).click()
+            WebDriverWait(driver, selenium_timeout).until(EC.url_changes(current_url))
+            WebDriverWait(driver, selenium_timeout).until(
+                EC.element_to_be_clickable((By.XPATH, "//textarea[contains(@placeholder, 'Ask a question')]"))
+            ).send_keys(" ")
+
 
         inject_request_interceptor(driver, api_data_json)
 
-        WebDriverWait(driver, 10).until(
+        button = WebDriverWait(driver, selenium_timeout).until(
             EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' and @aria-label='submit']"))
-        ).click()
+        )
 
-
+        button.click()
 
         start_time = datetime.now(timezone.utc)
 
         eval_count = 0
         last_data_time = time.time()
         while True:
-            chunks = driver.execute_script("return window.receivedChunks.splice(0, window.receivedChunks.length);")
+            chunks = driver.execute_script("""
+                if (typeof window.receivedChunks !== 'undefined' && window.receivedChunks !== null) {
+                    return window.receivedChunks.splice(0, window.receivedChunks.length);
+                } else {
+                    return [];
+                }
+            """)
             buffer = ""
             for chunk in chunks:
                 last_data_time = time.time()
