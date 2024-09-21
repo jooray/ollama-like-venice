@@ -26,7 +26,6 @@ import array
 
 app = Flask(__name__)
 selenium_lock = Semaphore()
-cookies = {}
 driver = {}
 
 class ResponseFormat(Enum):
@@ -53,6 +52,10 @@ def get_webdriver(headless=True, debug_browser=False, docker=False):
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
 
+    if args.seed:
+        chrome_options.add_argument("--disable-features=ChromeAppsDeprecation")
+
+    chrome_options.page_load_strategy = 'eager'
     # Check if system-wide chromedriver exists
     system_chromedriver = "/usr/bin/chromedriver"
     if os.path.exists(system_chromedriver) and os.access(system_chromedriver, os.X_OK):
@@ -78,11 +81,13 @@ def get_webdriver(headless=True, debug_browser=False, docker=False):
             print(f"Chrome initialization failed: {e}")
     else:
         # Use ChromeDriverManager to install
+
         try:
             driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
             return driver
         except WebDriverException as e:
             print(f"Chrome not found ({e}), trying Chromium")
+
 
         try:
             driver = webdriver.Chrome(service=Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()), options=chrome_options)
@@ -92,10 +97,37 @@ def get_webdriver(headless=True, debug_browser=False, docker=False):
 
     raise Exception("Neither Chrome nor Chromium could be initialized. Please make sure one of them is installed.")
 
+def ensure_logged_in(driver):
+    max_attempts = 3
+    attempt = 0
 
-def login_to_venice(username, password):
-    global cookies, driver, args
-    print(f"Logging in to venice...")
+    # Wait for the account button to contain the "PRO" span (to make sure
+    # venice realized we are a pro user)
+    while attempt < max_attempts:
+        try:
+            WebDriverWait(driver, selenium_timeout).until(
+            EC.element_to_be_clickable((By.XPATH,
+                                    "//button[.//p[contains(text(), 'Text Conversation')]]"))
+            )
+
+            if args.ensure_pro:
+                WebDriverWait(driver, selenium_timeout).until(
+                    EC.presence_of_element_located((By.XPATH,
+                                                    "//button[.//span[contains(text(), 'PRO')]]"))
+                )
+            break
+        except TimeoutException:
+            if attempt < max_attempts - 1:
+                print(f"PRO span not found. Refreshing... (Attempt {attempt + 1}/{max_attempts})")
+                driver.refresh()
+            attempt += 1
+
+    if attempt == max_attempts:
+        raise TimeoutException("PRO span not found after maximum refresh attempts")
+
+def login_to_venice_with_username(username, password):
+    global driver, args
+    print(f"Logging in to venice with username and password...")
     driver = get_webdriver(headless=args.headless, debug_browser=args.debug_browser, docker=args.docker)
 
     driver.get("https://venice.ai/sign-in")
@@ -114,35 +146,285 @@ def login_to_venice(username, password):
     button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit'][contains(text(), 'Sign in')]")))
     button.click()
 
-    # Wait for the button to be clickable
-    button = WebDriverWait(driver, selenium_timeout).until(
-        EC.element_to_be_clickable((By.XPATH,
-                                    "//button[.//p[contains(text(), 'Text Conversation')]]"))
-    )
-
-    max_attempts = 3
-    attempt = 0
-
-    # Wait for the account button to contain the "PRO" span (to make sure
-    # venice realized we are a pro user)
-    while attempt < max_attempts:
-        try:
-            WebDriverWait(driver, selenium_timeout).until(
-                EC.presence_of_element_located((By.XPATH,
-                                                "//button[.//span[contains(text(), 'PRO')]]"))
-            )
-            break
-        except TimeoutException:
-            if attempt < max_attempts - 1:
-                print(f"PRO span not found. Refreshing... (Attempt {attempt + 1}/{max_attempts})")
-                driver.refresh()
-            attempt += 1
-
-    if attempt == max_attempts:
-        raise TimeoutException("PRO span not found after maximum refresh attempts")
+    ensure_logged_in(driver)
 
     print(f"Logged in as {username}")
     return driver
+
+def inject_web3_provider(driver, seed):
+    script = """
+    (function injectWeb3Provider() {
+    const script = document.createElement('script');
+    script.textContent = `
+        (function() {
+            function loadScript(url) {
+                return new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = url;
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+            }
+
+            async function loadDependencies() {
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js');
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/web3/1.8.2/web3.min.js');
+            }
+
+            function createProvider(wallet) {
+                const provider = {
+                    isMetaMask: true,
+                    _metamask: {
+                        isUnlocked: () => Promise.resolve(true),
+                        requestBatch: () => Promise.resolve(),
+                        isApproved: () => Promise.resolve(true),
+                    },
+                    selectedAddress: wallet.address,
+                    networkVersion: '42161', // Arbitrum One
+                    chainId: '0xa4b1', // Arbitrum One
+                    isConnected: () => true,
+                    subscriptions: new Map(),
+                    request: async ({ method, params }) => {
+                        console.log('Request received:', method, params);
+                        return new Promise((resolve, reject) => {
+                            switch (method) {
+                                case 'eth_requestAccounts':
+                                case 'eth_accounts':
+                                    resolve([wallet.address]);
+                                case 'personal_sign':
+                                case 'eth_sign':
+                                    const messageHash = ethers.utils.hashMessage(params[1]);
+                                    resolve(wallet.signMessage(ethers.utils.arrayify(messageHash)));
+                                case 'eth_chainId':
+                                    resolve('0xa4b1'); // Arbitrum One
+                                case 'net_version':
+                                    resolve('42161'); // Arbitrum One
+                                default:
+                                    reject(new Error(\`Unsupported web3 method: \${method}\`));
+                            }
+                        });
+                    },
+                    setMaxListeners: function(n) {
+                      console.log('setMaxListeners called with:', n);
+                    },
+                    then: function(onFulfilled, onRejected) {
+                        console.log('then method called');
+                        return Promise.resolve(this).then(onFulfilled, onRejected);
+                    },
+                    bzz: undefined,
+                    removeListener: function(eventName, listener) {
+                       console.log('removeListener called for:', eventName);
+                    },
+                    on: (eventName, callback) => {
+                        const subscriptionId = \`sub_${Math.random().toString(36).substring(2, 15)}\`;
+                        console.log('Setting up provider event listener for:', eventName, 'with subscriptionId:', subscriptionId);
+                        switch (eventName) {
+                            case 'accountsChanged':
+                                provider.subscriptions.set(subscriptionId, { callback });
+                                setTimeout(() => callback([wallet.address]), 4500);
+                                break;
+
+                            case 'connect':
+                                console.log('Connected to the network');
+                                provider.subscriptions.set(subscriptionId, { callback });
+                                setTimeout(() => callback({ chainId: '0xa4b1' }), 4000);
+                                break;
+
+                            case 'message':
+                            case 'disconnect':
+                            case 'error':
+                                provider.subscriptions.set(subscriptionId, { callback });
+                                break;
+                        }
+
+                        console.log(\`Called on provider.on(\${eventName}, \${callback})\`);
+                    },
+                    removeListener: () => {},
+                };
+
+                // Mimic MetaMask's extension behavior
+                provider.request.toString = () => 'function request() { [native code] }';
+                Object.setPrototypeOf(provider, EventTarget.prototype);
+
+                const eip6963_metamask_provider = {
+                    info: {
+                        name: "MetaMask",
+                        uuid: "04c4cfd0-60b3-49fb-8f11-e181fa32b912",
+                        rdns: "io.metamask",
+                        icon: ""
+                    },
+                    provider: provider
+                };
+
+                function announceMetamaskWalletProvider() {
+                      console.log('announceMetamaskWalletProvider called');
+                      console.log('event detail:', eip6963_metamask_provider);
+
+                    window.dispatchEvent(new CustomEvent("eip6963:announceProvider", {
+                        detail: eip6963_metamask_provider,
+                        bubbles: true,
+                        cancelable: false
+                    }));
+                }
+                // this is a problem:
+                // maybe we should wait before clicking to walletconnect?
+                // maybe try from javascript console to trigger it manually
+                //setTimeout(announceMetamaskWalletProvider, 3900);
+                //window.addEventListener("eip6963:requestProvider", announceMetamaskWalletProvider);
+
+                return provider;
+
+                // DEBUG ON
+                /*try {
+                    return new Proxy(provider, {
+                        get(target, prop) {
+                            try {
+                                const value = target[prop];
+                                const stack = new Error().stack;
+                                console.log('Accessing property:', String(prop));
+                                console.log('Stack trace:', stack);
+
+
+                                if (typeof value === 'function') {
+                                    return function(...args) {
+                                        try {
+                                            console.log('Calling method:', String(prop), args);
+                                            return value.apply(target, args);
+                                        } catch (error) {
+                                            console.error('Error calling method:', String(prop), error);
+                                            return undefined;
+                                        }
+                                    };
+                                }
+
+                                return value;
+                            } catch (error) {
+                                console.error('Error accessing property:', String(prop), error);
+                                return undefined;
+                            }
+                        },
+                        set(target, prop, value) {
+                            try {
+                                console.log('Setting property:', String(prop), value);
+                                target[prop] = value;
+                                return true;
+                            } catch (error) {
+                                console.error('Error setting property:', String(prop), error);
+                                return false;
+                            }
+                        }
+                    });
+                } catch (error) {
+                    console.error('Error creating proxy:', error);
+                    return provider;
+                }
+                */
+            // DEBUG OFF
+            }
+
+
+            loadDependencies().then(() => {
+                const seed = '{seed}'; // Replace with actual seed
+                const hdNode = ethers.utils.HDNode.fromMnemonic(seed);
+                const wallet = hdNode.derivePath("m/44'/60'/0'/0/0");
+
+                const provider = createProvider(wallet);
+
+                // Overwrite window.ethereum and keep it overwritten
+                Object.defineProperty(window, 'ethereum', {
+                    value: provider,
+                    writable: false,
+                    configurable: true
+                });
+
+                // Set up mutation observer to ensure window.ethereum stays overwritten
+                const observer = new MutationObserver(() => {
+                    if (window.ethereum !== provider) {
+                        Object.defineProperty(window, 'ethereum', {
+                            value: provider,
+                            writable: false,
+                            configurable: true
+                        });
+                    }
+                });
+                observer.observe(document, { childList: true, subtree: true });
+
+                window.web3 = new Web3(provider);
+
+                // Dispatch event to notify that the provider is ready
+                window.dispatchEvent(new Event('ethereum#initialized'));
+
+                // Mimic content script injection
+                const metaMaskScript = document.createElement('script');
+                metaMaskScript.setAttribute('data-extension-id', 'nkbihfbeogaeaoehlefnkodbefgpgknn'); // MetaMask's extension ID
+                document.head.appendChild(metaMaskScript);
+
+
+                console.log('Web3 provider injected successfully with Arbitrum One configuration');
+            });
+        })();
+    `;
+    document.documentElement.appendChild(script);
+    script.remove();
+})();
+
+    """.replace('{seed}', seed)
+    driver.execute_script(script)
+
+
+def login_to_venice_with_seed(seed):
+    global driver, args
+    print(f"Logging in to venice with seed...")
+    driver = get_webdriver(headless=args.headless, debug_browser=args.debug_browser, docker=args.docker)
+
+    driver.get("about:blank")
+    inject_web3_provider(driver, seed)
+    driver.get("https://venice.ai/sign-in")
+    print("Injecting web3 provider")
+    inject_web3_provider(driver, seed)
+
+    print("Waiting to click on Wallet Connect")
+    wait = WebDriverWait(driver, selenium_timeout)
+    button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@aria-label='Wallet Connect']")))
+    button.click()
+
+    print("Sleeping...")
+    time.sleep(200)
+
+    # To continue here
+    driver.execute_script("""document.querySelector('w3m-modal')
+    .shadowRoot.querySelector('wui-flex')
+    .querySelector('wui-card')
+    .querySelector('w3m-router')
+    .shadowRoot.querySelector('div')
+    .querySelector('w3m-connect-view')
+    .shadowRoot.querySelector('wui-flex')
+    .querySelector('w3m-wallet-login-list')
+    .shadowRoot.querySelector('wui-flex')
+    .querySelector('w3m-connector-list')
+    .shadowRoot.querySelector('wui-flex')
+    .querySelector('w3m-connect-injected-widget')
+    .shadowRoot.querySelector('wui-flex')
+    .querySelector('w3m-list-wallet')
+    .shadowRoot.querySelector('button').click();""")
+
+    print("yay")
+
+    ensure_logged_in(driver)
+
+    print(f"Logged in as {username}")
+    return driver
+
+
+def login_to_venice():
+    if (username is not None and password is not None and len(username)>0):
+        return login_to_venice_with_username(username, password)
+    elif (seed is not None):
+        return login_to_venice_with_seed(seed)
+    else:
+        print("No username and password, nor seed provided")
+        sys.exit(1)
 
 def inject_request_interceptor(driver, api_data_json):
     script = f"""
@@ -321,7 +603,7 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
         except WebDriverException as e:
             print(f"Error occurred while quitting WebDriver: {e}")
 
-        driver = login_to_venice(username, password)
+        driver = login_to_venice()
         if driver:
             yield from generate_selenium_streamed_response(data, driver, response_format)
 
@@ -436,6 +718,7 @@ def tags():
     tags_response = {
         "models": [
             get_mock_model("llama-3.1-405b-akash-api:latest", "405B"),
+            get_mock_model("dolphin-2.9.2-qwen2-72b:latest","72B"),
             get_mock_model("hermes-2-theta-web:latest", "8B"),
             get_mock_model("nous-hermes-8-web:latest", "8B")
         ]}
@@ -487,7 +770,6 @@ def mock_show():
 
 parser = argparse.ArgumentParser(description='Ollama-like API for venice.ai')
 
-# Mandatory arguments (USERNAME and PASSWORD)
 parser.add_argument('--username', type=str, required=False, help='Venice username')
 parser.add_argument('--password', type=str, required=False, help='Venice password')
 
@@ -500,22 +782,25 @@ parser.add_argument('--headless', action='store_true', default=True, help='Run S
 parser.add_argument('--no-headless', action='store_false', dest='headless', help='Disable headless mode and run with a visible browser window')
 parser.add_argument('--debug-browser', action='store_true', default=False, help='Enable browser debugging logs')
 parser.add_argument('--docker', action='store_true', default=False, help='Do not run Chrome sandbox (required for docker)')
+parser.add_argument('--seed', type=str, required=False, help='Seed to log in with WalletConnect')
+parser.add_argument('--ensure-pro', action='store_true', default=False, help='Ensure that Venice recognized the user has a pro account')
 
 args = parser.parse_args()
 
-# Set username and password from environment variables if not provided
+# Set username and password or seed from environment variables if not provided
 username = args.username or os.getenv('VENICE_USERNAME')
 password = args.password or os.getenv('VENICE_PASSWORD')
+seed = args.seed or os.getenv('VENICE_SEED')
 
-if not username or not password:
-    print("Both username and password for venice are required. Set using command line arguments or VENICE_USERNAME and VENICE_PASSWORD environment variables", file=sys.stderr)
+if (not seed) and (not username or not password):
+    print("Either seed or both username and password for venice are required. Set using command line arguments or environment variables - VENICE_SEED or VENICE_USERNAME and VENICE_PASSWORD", file=sys.stderr)
     sys.exit(1)
 
 timeout=args.timeout
 selenium_timeout=args.selenium_timeout
 debug_browser = args.debug_browser
 
-driver = login_to_venice(username, password)
+driver = login_to_venice()
 print(f"Starting server at port {args.host}:{args.port}")
 http_server = WSGIServer((args.host, args.port), app)
 http_server.serve_forever()
