@@ -131,8 +131,10 @@ def login_to_venice_with_username(username, password):
     driver = get_webdriver(headless=args.headless, debug_browser=args.debug_browser, docker=args.docker)
 
     driver.get("https://venice.ai/sign-in")
-    driver.find_element("id", "identifier").send_keys(username)
     wait = WebDriverWait(driver, selenium_timeout)
+
+    email_field = wait.until(EC.visibility_of_element_located((By.ID, "identifier")))
+    email_field.send_keys(username)
     button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit'][contains(text(), 'Sign in')]")))
     button.click()
 
