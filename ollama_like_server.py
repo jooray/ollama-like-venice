@@ -484,10 +484,7 @@ def inject_request_interceptor(driver, api_data_json):
       }};
     }})(window.fetch);
     """
-    print("Executing script")
-    driver.execute_script('console.log("before");')
     driver.execute_script(script)
-    driver.execute_script('console.log("after");')
 
 def presence_of_either_element_located(locators):
     def _predicate(driver):
