@@ -34,7 +34,7 @@ Especially note if pip and python are different python versions, that might caus
 
 If they are lower version, you might try calling a command with version (python3.11, pip3.11 or python3 and pip3)
 
-Navigate to the project directory using `cd ollama-like-api-for-venice`
+Navigate to the project directory using `cd ollama-like-venice`
 
 Start by first creating and activating a Python virtual environment (optional but recommended):
 
