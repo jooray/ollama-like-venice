@@ -23,6 +23,9 @@ import hashlib
 from enum import Enum
 import array
 
+# Debugger
+import ipdb
+
 
 app = Flask(__name__)
 selenium_lock = Semaphore()
@@ -195,9 +198,36 @@ def inject_web3_provider(driver, seed):
                                 case 'eth_accounts':
                                     resolve([wallet.address]);
                                 case 'personal_sign':
+                                    message = params[0];
+                                    if (message.startsWith('0x')) {
+                                            message = ethers.utils.toUtf8String(message);
+                                    }
+
+                                    const address = params[1];
+                                    if (address.toLowerCase() !== wallet.address.toLowerCase()) {
+                                        console.log('Address is wrong');
+                                        reject(new Error('Address mismatch'));
+                                    } else {
+                                        wallet.signMessage(message)
+                                            .then(signature => {
+                                                console.log('Returning signature');
+                                                resolve(signature);
+                                            })
+                                            .catch(error => {
+                                                console.error('Error signing message:', error);
+                                                reject(error);
+                                            });
+                                    }
+                                    break;
                                 case 'eth_sign':
-                                    const messageHash = ethers.utils.hashMessage(params[1]);
-                                    resolve(wallet.signMessage(ethers.utils.arrayify(messageHash)));
+                                    const messageToSign = ethers.utils.arrayify(params[1]);
+                                    const addressForEthSign = params[0];
+                                    if (addressForEthSign.toLowerCase() !== wallet.address.toLowerCase()) {
+                                        reject(new Error('Address mismatch'));
+                                    } else {
+                                        return wallet.signMessage(messageToSign);
+                                    }
+                                    break;
                                 case 'eth_chainId':
                                     resolve('0xa4b1'); // Arbitrum One
                                 case 'net_version':
@@ -210,10 +240,11 @@ def inject_web3_provider(driver, seed):
                     setMaxListeners: function(n) {
                       console.log('setMaxListeners called with:', n);
                     },
+                    /*
                     then: function(onFulfilled, onRejected) {
                         console.log('then method called');
                         return Promise.resolve(this).then(onFulfilled, onRejected);
-                    },
+                    },*/
                     bzz: undefined,
                     removeListener: function(eventName, listener) {
                        console.log('removeListener called for:', eventName);
@@ -272,13 +303,13 @@ def inject_web3_provider(driver, seed):
                 // this is a problem:
                 // maybe we should wait before clicking to walletconnect?
                 // maybe try from javascript console to trigger it manually
-                //setTimeout(announceMetamaskWalletProvider, 3900);
-                //window.addEventListener("eip6963:requestProvider", announceMetamaskWalletProvider);
+                setTimeout(announceMetamaskWalletProvider, 300);
+                window.addEventListener("eip6963:requestProvider", announceMetamaskWalletProvider);
 
-                return provider;
+                //return provider;
 
                 // DEBUG ON
-                /*try {
+                try {
                     return new Proxy(provider, {
                         get(target, prop) {
                             try {
@@ -321,27 +352,29 @@ def inject_web3_provider(driver, seed):
                     console.error('Error creating proxy:', error);
                     return provider;
                 }
-                */
+
             // DEBUG OFF
             }
 
-
+            console.log('Loading dependencies')
             loadDependencies().then(() => {
                 const seed = '{seed}'; // Replace with actual seed
                 const hdNode = ethers.utils.HDNode.fromMnemonic(seed);
-                const wallet = hdNode.derivePath("m/44'/60'/0'/0/0");
+                const wallet = new ethers.Wallet(hdNode.derivePath("m/44'/60'/0'/0/0"));
+
+                console.log('Creating provider')
 
                 const provider = createProvider(wallet);
 
                 // Overwrite window.ethereum and keep it overwritten
-                Object.defineProperty(window, 'ethereum', {
+                /*Object.defineProperty(window, 'ethereum', {
                     value: provider,
                     writable: false,
                     configurable: true
-                });
+                });*/
 
                 // Set up mutation observer to ensure window.ethereum stays overwritten
-                const observer = new MutationObserver(() => {
+                /*const observer = new MutationObserver(() => {
                     if (window.ethereum !== provider) {
                         Object.defineProperty(window, 'ethereum', {
                             value: provider,
@@ -351,16 +384,16 @@ def inject_web3_provider(driver, seed):
                     }
                 });
                 observer.observe(document, { childList: true, subtree: true });
-
-                window.web3 = new Web3(provider);
+                */
+                //window.web3 = new Web3(provider);
 
                 // Dispatch event to notify that the provider is ready
-                window.dispatchEvent(new Event('ethereum#initialized'));
+                //window.dispatchEvent(new Event('ethereum#initialized'));
 
                 // Mimic content script injection
-                const metaMaskScript = document.createElement('script');
-                metaMaskScript.setAttribute('data-extension-id', 'nkbihfbeogaeaoehlefnkodbefgpgknn'); // MetaMask's extension ID
-                document.head.appendChild(metaMaskScript);
+                //const metaMaskScript = document.createElement('script');
+                //metaMaskScript.setAttribute('data-extension-id', 'nkbihfbeogaeaoehlefnkodbefgpgknn'); // MetaMask's extension ID
+                //document.head.appendChild(metaMaskScript);
 
 
                 console.log('Web3 provider injected successfully with Arbitrum One configuration');
@@ -374,6 +407,14 @@ def inject_web3_provider(driver, seed):
     """.replace('{seed}', seed)
     driver.execute_script(script)
 
+
+
+def element_and_shadow_root_exist(driver, selector):
+    script = f"""
+        const el = {selector};
+        return el && el.shadowRoot;
+    """
+    return driver.execute_script(script)
 
 def login_to_venice_with_seed(seed):
     global driver, args
@@ -391,31 +432,41 @@ def login_to_venice_with_seed(seed):
     button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@aria-label='Wallet Connect']")))
     button.click()
 
-    print("Sleeping...")
-    time.sleep(200)
+    print("Clicked")
+    wait.until(lambda driver: driver.execute_script(
+        "return document.querySelector('w3m-modal').classList.contains('open');"))
 
-    # To continue here
-    driver.execute_script("""document.querySelector('w3m-modal')
-    .shadowRoot.querySelector('wui-flex')
-    .querySelector('wui-card')
-    .querySelector('w3m-router')
-    .shadowRoot.querySelector('div')
-    .querySelector('w3m-connect-view')
-    .shadowRoot.querySelector('wui-flex')
-    .querySelector('w3m-wallet-login-list')
-    .shadowRoot.querySelector('wui-flex')
-    .querySelector('w3m-connector-list')
-    .shadowRoot.querySelector('wui-flex')
-    .querySelector('w3m-connect-injected-widget')
-    .shadowRoot.querySelector('wui-flex')
-    .querySelector('w3m-list-wallet')
-    .shadowRoot.querySelector('button').click();""")
+    selectors = [
+        "document.querySelector('w3m-modal')",
+        ".querySelector('w3m-router')",
+        ".querySelector('w3m-connecting-siwe-view')",
+        ".querySelectorAll('wui-button')[1]"
+    ]
 
-    print("yay")
+    current_selector = selectors[0]
+    for next_selector in selectors[1:]:
+        WebDriverWait(driver, selenium_timeout).until(
+            lambda x: element_and_shadow_root_exist(x, current_selector)
+        )
+        current_selector += ".shadowRoot" + next_selector
+
+    sign_button_selector = current_selector
+    js_is_clickable = f"""
+        const button = {sign_button_selector};
+        return button && !button.disabled;
+    """
+    WebDriverWait(driver, selenium_timeout).until(lambda x: x.execute_script(js_is_clickable))
+
+    js_click = f"""
+        const button = {sign_button_selector};
+        button.click();
+    """
+
+    driver.execute_script(js_click)
 
     ensure_logged_in(driver)
 
-    print(f"Logged in as {username}")
+    print(f"Logged in with seed")
     return driver
 
 
