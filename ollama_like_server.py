@@ -35,6 +35,7 @@ class ResponseFormat(Enum):
     CHAT = 1
     GENERATE = 2
     COMPLETION_AS_STRING = 3
+    CHAT_NON_STREAMED = 4
 
 
 def capture_and_redirect_browser_logs(driver):
@@ -240,11 +241,6 @@ def inject_web3_provider(driver, seed):
                     setMaxListeners: function(n) {
                       console.log('setMaxListeners called with:', n);
                     },
-                    /*
-                    then: function(onFulfilled, onRejected) {
-                        console.log('then method called');
-                        return Promise.resolve(this).then(onFulfilled, onRejected);
-                    },*/
                     bzz: undefined,
                     removeListener: function(eventName, listener) {
                        console.log('removeListener called for:', eventName);
@@ -300,10 +296,7 @@ def inject_web3_provider(driver, seed):
                         cancelable: false
                     }));
                 }
-                // this is a problem:
-                // maybe we should wait before clicking to walletconnect?
-                // maybe try from javascript console to trigger it manually
-                setTimeout(announceMetamaskWalletProvider, 300);
+                setTimeout(announceMetamaskWalletProvider, 100);
                 window.addEventListener("eip6963:requestProvider", announceMetamaskWalletProvider);
 
                 //return provider;
@@ -358,7 +351,7 @@ def inject_web3_provider(driver, seed):
 
             console.log('Loading dependencies')
             loadDependencies().then(() => {
-                const seed = '{seed}'; // Replace with actual seed
+                const seed = '{seed}';
                 const hdNode = ethers.utils.HDNode.fromMnemonic(seed);
                 const wallet = new ethers.Wallet(hdNode.derivePath("m/44'/60'/0'/0/0"));
 
@@ -366,25 +359,6 @@ def inject_web3_provider(driver, seed):
 
                 const provider = createProvider(wallet);
 
-                // Overwrite window.ethereum and keep it overwritten
-                /*Object.defineProperty(window, 'ethereum', {
-                    value: provider,
-                    writable: false,
-                    configurable: true
-                });*/
-
-                // Set up mutation observer to ensure window.ethereum stays overwritten
-                /*const observer = new MutationObserver(() => {
-                    if (window.ethereum !== provider) {
-                        Object.defineProperty(window, 'ethereum', {
-                            value: provider,
-                            writable: false,
-                            configurable: true
-                        });
-                    }
-                });
-                observer.observe(document, { childList: true, subtree: true });
-                */
                 //window.web3 = new Web3(provider);
 
                 // Dispatch event to notify that the provider is ready
@@ -395,8 +369,7 @@ def inject_web3_provider(driver, seed):
                 //metaMaskScript.setAttribute('data-extension-id', 'nkbihfbeogaeaoehlefnkodbefgpgknn'); // MetaMask's extension ID
                 //document.head.appendChild(metaMaskScript);
 
-
-                console.log('Web3 provider injected successfully with Arbitrum One configuration');
+                console.log('Web3 provider injected successfully');
             });
         })();
     `;
@@ -553,12 +526,13 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
     global timeout
     request_id = str(uuid.uuid4())[:8]
     model_id = data.get('model', 'llama-3.1-405b-akash-api')
-    if ':latest' in model_id:
-        model_id = model_id.split(':latest')[0]
+    request_model_id = model_id
+    if ':latest' in request_model_id:
+        request_model_id = request_model_id.split(':latest')[0]
 
     api_data = {
         "requestId": request_id,
-        "modelId": model_id,
+        "modelId": request_model_id,
         "prompt": data['messages'],
         "systemPrompt": "",
         "conversationType": "text",
@@ -610,6 +584,7 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
 
         eval_count = 0
         last_data_time = time.time()
+        streamed_content = ""
         while True:
             chunks = driver.execute_script("""
                 if (typeof window.receivedChunks !== 'undefined' && window.receivedChunks !== null) {
@@ -640,6 +615,8 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
                                         "done": False
                                     }
                                     yield f"{json.dumps(message)}\r\n"
+                                elif response_format == ResponseFormat.CHAT_NON_STREAMED:
+                                    streamed_content += json_data.get('content', '')
                                 elif response_format == ResponseFormat.GENERATE:
                                     message = {
                                         "model": model_id,
@@ -664,14 +641,14 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
 
         capture_and_redirect_browser_logs(driver)
 
-        if (response_format == ResponseFormat.CHAT) or (response_format == ResponseFormat.GENERATE):
+        if (response_format == ResponseFormat.CHAT) or (response_format == ResponseFormat.GENERATE) or (response_format == ResponseFormat.CHAT_NON_STREAMED):
             end_time = datetime.now(timezone.utc)
             duration = int((end_time - start_time).total_seconds() * 1e9)  # nanoseconds
 
             final_message = {
                 "model": model_id,
                 "created_at": datetime.utcnow().isoformat() + "Z",
-                "message": {"role": "assistant", "content": ""},
+                "message": {"role": "assistant", "content": streamed_content},
                 "done_reason": "stop",
                 "done": True,
                 "total_duration": duration,
@@ -713,8 +690,20 @@ def chat():
     request_json = parse_json_request(request)
     if request_json is None :
             return Response("Invalid JSON data received", status=400, content_type='text/plain')
+    response_format = ResponseFormat.CHAT
+    if 'stream' in request_json and request_json['stream'] == False:
+        response_format = ResponseFormat.CHAT_NON_STREAMED
+
+    content_type = 'application/x-ndjson'
+
+    headers = {}
+    if (response_format == ResponseFormat.CHAT_NON_STREAMED) or ('Connection' in request.headers and request.headers['Connection'].lower() == 'close'):
+        headers['Connection'] = 'close'
+        content_type = 'application/json; charset=utf-8'
+
+
     with selenium_lock:
-        return Response(generate_selenium_streamed_response(request_json, driver, response_format=ResponseFormat.CHAT), content_type='application/x-ndjson')
+        return Response(generate_selenium_streamed_response(request_json, driver, response_format=response_format), content_type=content_type, headers=headers)
 
 @app.route('/api/generate', methods=['POST'])
 def generate():
