@@ -686,20 +686,16 @@ def chat():
     request_json = parse_json_request(request)
     if request_json is None :
             return Response("Invalid JSON data received", status=400, content_type='text/plain')
-    response_format = ResponseFormat.CHAT
-    if 'stream' in request_json and request_json['stream'] == False:
-        response_format = ResponseFormat.CHAT_NON_STREAMED
 
+    response_format = ResponseFormat.CHAT
     content_type = 'application/x-ndjson'
 
-    headers = {}
-    if (response_format == ResponseFormat.CHAT_NON_STREAMED) or ('Connection' in request.headers and request.headers['Connection'].lower() == 'close'):
-        headers['Connection'] = 'close'
+    if 'stream' in request_json and request_json['stream'] == False:
+        response_format = ResponseFormat.CHAT_NON_STREAMED
         content_type = 'application/json; charset=utf-8'
 
-
     with selenium_lock:
-        return Response(generate_selenium_streamed_response(request_json, driver, response_format=response_format), content_type=content_type, headers=headers)
+        return Response(generate_selenium_streamed_response(request_json, driver, response_format=response_format), content_type=content_type)
 
 @app.route('/api/generate', methods=['POST'])
 def generate():
