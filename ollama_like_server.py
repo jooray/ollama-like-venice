@@ -23,10 +23,6 @@ import hashlib
 from enum import Enum
 import array
 
-# Debugger
-import ipdb
-
-
 app = Flask(__name__)
 selenium_lock = Semaphore()
 driver = {}
