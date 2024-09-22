@@ -17,10 +17,7 @@ This project simulates the Ollama API using Venice.ai's text generation capabili
 If you would become a lifetime Pro user on Venice, head over to the 
 [original crowdfunding page](https://pay.cypherpunk.today/apps/26zEBNn6FGAkzvVVuDMz3SXrKJLU/crowdfund), the pro accounts are still on sale.
 
-Please note that currently they are seed-based (not e-mail/password), so they can't be used 
-with this code. I am trying to solve this (if you'd like to contribute code, send me pull 
-request).
-
+Please note that currently they are seed-based (not e-mail/password), but they should work with this code.
 
 ## Installation
 
@@ -76,7 +73,16 @@ export VENICE_PASSWORD="your-password"
 
 Replace "your-username" and "your-password" with your actual Venice credentials.
 
+If you have a life time pro account based on MOR token in your wallet, you can login using seed instead of username and password:
+
+```bash
+export VENICE_SEED="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+```
+
 Run the server using `python ollama_like_server.py`
+
+If you have a pro account, I recommend adding --ensure-pro flag, sometimes the pro account is not recognized and thus you don't have 
+access to better models.
 
 If you need to set additional options, see the options:
 
@@ -86,6 +92,7 @@ usage: ollama_like_server.py [-h] [--username USERNAME] [--password PASSWORD]
                              [--host HOST] [--port PORT] [--timeout TIMEOUT]
                              [--selenium-timeout SELENIUM_TIMEOUT]
                              [--headless] [--no-headless] [--debug-browser]
+                             [--docker] [--seed SEED] [--ensure-pro]
 
 Ollama-like API for venice.ai
 
@@ -102,6 +109,10 @@ options:
   --no-headless         Disable headless mode and run with a visible browser
                         window
   --debug-browser       Enable browser debugging logs
+  --docker              Do not run Chrome sandbox (required for docker)
+  --seed SEED           Seed to log in with WalletConnect
+  --ensure-pro          Ensure that Venice recognized the user has a pro
+                        account
 ```
 
 ## Troubleshooting
@@ -153,9 +164,18 @@ ENABLE_RAG_WEB_SEARCH=true RAG_WEB_SEARCH_ENGINE=duckduckgo OLLAMA_BASE_URL="htt
 
 Now open-webui should listen on http://127.0.0.1:8082/, visit it through the browser.
 
-If you run local ollama, you can omit the OLLAMA_BASE_URL part and set it via the web interface - see below.
+If you run local ollama, you can set the URL like this:
 
-### Setting up venice through ollama-like proxy
+```bash
+cd open-webui
+source venv/bin/activate
+ENABLE_RAG_WEB_SEARCH=true RAG_WEB_SEARCH_ENGINE=duckduckgo OLLAMA_BASE_URLS="http://127.0.0.1:9999;http://127.0.0.1:11434" open-webui serve --port 8082
+```
+
+
+### Setting up venice through ollama-like proxy through web interface
+
+I recommend setting the ollama URLs usng the method above, but you can also try using the web interface - it does not always persist restarts though.
 
 After login to the Open-WebUI interface, click on your account (top right icon), then click on Admin Panel, choose the Settings tab, go to Connections.
 Under the Ollama API either change the URL (if you don't run local Ollama), or
@@ -168,10 +188,12 @@ resolving, especially if you have both ipv4 and ipv6 host entries for localhost.
 Also, make sure you are using http, not https.
 
 Then click on the arrows icon, which will verify the connection. If everything is ok, you should see the new models under new chat - the models are
-"llama-3.1-405b-akash-api", "hermes-2-theta-web", "dogge-llama-3-70b". 
+"llama-3.1-405b-akash-api", "dolphin-2.9.2-qwen2-72b", "hermes-2-theta-web", "nous-hermes-8-web"
 
-Hermes-2-theta has access to web search, llama-3.1-405b is the currently best open model.
-Note that you can also access web through "#" command in open-webui prompt.
+The *-web models have access to web search, llama-3.1-405b is the currently best open model.
+Dolphin is the most uncensored model.
+
+Note that you can also access web through "#" command in open-webui prompt, in this case web search is faciliated by open-webui, not venice.
 
 ## Setting up continue.dev
 
@@ -187,20 +209,26 @@ for example this is a complete configuration:
     {
       "title": "venice llama3.1-405b",
       "provider": "ollama",
-      "apiBase": "http://localhost:9999",
+      "apiBase": "http://127.0.0.1:9999",
       "model": "llama-3.1-405b-akash-api"
     },
     {
-      "title": "venice dogge-llama-3-70b",
+      "title": "venice dolphin-2.9.2-qwen2-72b",
       "provider": "ollama",
-      "apiBase": "http://localhost:9999",
-      "model": "dogge-llama-3-70b"
+      "apiBase": "http://127.0.0.1:9999",
+      "model": "dolphin-2.9.2-qwen2-72b"
     },
     {
       "title": "venice hermes-2-theta-web",
       "provider": "ollama",
       "apiBase": "http://localhost:9999",
       "model": "hermes-2-theta-web"
+    },
+    {
+      "title": "venice nous-hermes-8-web",
+      "provider": "ollama",
+      "apiBase": "http://localhost:9999",
+      "model": "nous-hermes-8-web"
     }
   ],
   "tabAutocompleteModel": {
