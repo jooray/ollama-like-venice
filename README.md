@@ -188,7 +188,7 @@ resolving, especially if you have both ipv4 and ipv6 host entries for localhost.
 Also, make sure you are using http, not https.
 
 Then click on the arrows icon, which will verify the connection. If everything is ok, you should see the new models under new chat - the models are
-"llama-3.1-405b-akash-api", "dolphin-2.9.2-qwen2-72b", "hermes-2-theta-web", "nous-hermes-8-web"
+"llama-3.1-405b-akash-api", "dolphin-2.9.2-qwen2-72b", "llama-3.2-3b-akash", "nous-hermes-8-web"
 
 The *-web models have access to web search, llama-3.1-405b is the currently best open model.
 Dolphin is the most uncensored model.
@@ -219,10 +219,10 @@ for example this is a complete configuration:
       "model": "dolphin-2.9.2-qwen2-72b"
     },
     {
-      "title": "venice hermes-2-theta-web",
+      "title": "venice llama-3.2-3b-akash",
       "provider": "ollama",
       "apiBase": "http://localhost:9999",
-      "model": "hermes-2-theta-web"
+      "model": "llama-3.2-3b-akash"
     },
     {
       "title": "venice nous-hermes-8-web",
