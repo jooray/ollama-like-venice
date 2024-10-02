@@ -183,8 +183,8 @@ def inject_web3_provider(driver, seed):
                         isApproved: () => Promise.resolve(true),
                     },
                     selectedAddress: wallet.address,
-                    networkVersion: '42161', // Arbitrum One
-                    chainId: '0xa4b1', // Arbitrum One
+                    networkVersion: '1', // Arbitrum One: 42161
+                    chainId: '0x1', // Arbitrum One: 0xa4b1
                     isConnected: () => true,
                     subscriptions: new Map(),
                     request: async ({ method, params }) => {
@@ -226,9 +226,14 @@ def inject_web3_provider(driver, seed):
                                     }
                                     break;
                                 case 'eth_chainId':
-                                    resolve('0xa4b1'); // Arbitrum One
+                                    resolve('0x1'); // Arbitrum One
+                                    break;
                                 case 'net_version':
-                                    resolve('42161'); // Arbitrum One
+                                    resolve('1'); // Arbitrum One
+                                    break;
+                                case 'wallet_switchEthereumChain':
+                                    resolve();
+                                    break;
                                 default:
                                     reject(new Error(\`Unsupported web3 method: \${method}\`));
                             }
