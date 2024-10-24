@@ -226,10 +226,10 @@ def inject_web3_provider(driver, seed):
                                     }
                                     break;
                                 case 'eth_chainId':
-                                    resolve('0x1'); // Arbitrum One
+                                    resolve('0x1');
                                     break;
                                 case 'net_version':
-                                    resolve('1'); // Arbitrum One
+                                    resolve('1');
                                     break;
                                 case 'wallet_switchEthereumChain':
                                     resolve();
@@ -793,7 +793,8 @@ def tags():
             get_mock_model("llama-3.1-405b-akash-api:latest", "405B"),
             get_mock_model("dolphin-2.9.2-qwen2-72b:latest","72B"),
             get_mock_model("llama-3.2-3b-akash:latest", "3B"),
-            get_mock_model("nous-hermes-8-web:latest", "8B")
+            get_mock_model("llama-3.1-nemotron-70b:latest", "70B"),
+            get_mock_model("nous-theta-web:latest", "8B")
         ]}
     return Response(json.dumps(tags_response), content_type='application/json')
 
