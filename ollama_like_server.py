@@ -556,7 +556,7 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
         if element.tag_name == 'button':
             element.click()
             element = WebDriverWait(driver, selenium_timeout).until(
-                EC.presence_of_element_located((By.XPATH, "//textarea[contains(@placeholder, 'Ask a question')]"))
+                EC.element_to_be_clickable((By.XPATH, "//textarea[contains(@placeholder, 'Ask a question')]"))
             )
         element.send_keys(" ")
 
@@ -794,7 +794,8 @@ def tags():
             get_mock_model("dolphin-2.9.2-qwen2-72b:latest","72B"),
             get_mock_model("llama-3.2-3b-akash:latest", "3B"),
             get_mock_model("llama-3.1-nemotron-70b:latest", "70B"),
-            get_mock_model("nous-theta-web:latest", "8B")
+            get_mock_model("nous-theta-web:latest", "8B"),
+            get_mock_model("nous-hermes3a-web:latest", "8B")
         ]}
     return Response(json.dumps(tags_response), content_type='application/json')
 

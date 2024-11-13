@@ -187,10 +187,10 @@ to match your local server configuration, 9999 is just default). If you set it t
 resolving, especially if you have both ipv4 and ipv6 host entries for localhost.
 Also, make sure you are using http, not https.
 
-Then click on the arrows icon, which will verify the connection. If everything is ok, you should see the new models under new chat - the models are "llama-3.1-405b-akash-api", "dolphin-2.9.2-qwen2-72b", "llama-3.2-3b-akash", "llama-3.1-nemotron-70b", "nous-theta-web"
-"
+Then click on the arrows icon, which will verify the connection. If everything is ok, you should see the new models under new chat - the models are "llama-3.1-405b-akash-api", "dolphin-2.9.2-qwen2-72b", "llama-3.2-3b-akash",  "nous-theta-web", "nous-hermes3a-web"
+
 The *-web models have access to web search, llama-3.1-405b is the currently best open model.
-Dolphin is the most uncensored model. Nemotron is a chain of thought model.
+Dolphin is the most uncensored model. 
 
 Note that you can also access web through "#" command in open-webui prompt, in this case web search is faciliated by open-webui, not venice.
 
@@ -224,16 +224,16 @@ for example this is a complete configuration:
       "model": "llama-3.2-3b-akash"
     },
     {
-      "title": "venice llama-3.1-nemotron-70b",
-      "provider": "ollama",
-      "apiBase": "http://localhost:9999",
-      "model": "llama-3.1-nemotron-70b"
-    },
-    {
       "title": "venice nous-theta-web",
       "provider": "ollama",
       "apiBase": "http://localhost:9999",
       "model": "nous-theta-web"
+    },
+    {
+      "title": "venice nous-hermes3a-web",
+      "provider": "ollama",
+      "apiBase": "http://localhost:9999",
+      "model": "nous-hermes3a-web"
     }
   ],
   "tabAutocompleteModel": {
