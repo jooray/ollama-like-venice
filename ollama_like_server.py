@@ -558,6 +558,11 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
             element = WebDriverWait(driver, selenium_timeout).until(
                 EC.element_to_be_clickable((By.XPATH, "//textarea[contains(@placeholder, 'Ask a question')]"))
             )
+        WebDriverWait(driver, selenium_timeout).until(
+            lambda d: element.is_displayed() and element.is_enabled()
+        )
+
+        element.click()
         element.send_keys(" ")
 
         current_url = driver.current_url
@@ -568,9 +573,15 @@ def generate_selenium_streamed_response(data, driver, response_format=ResponseFo
                 EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' and @aria-label='submit']"))
             ).click()
             WebDriverWait(driver, selenium_timeout).until(EC.url_changes(current_url))
-            WebDriverWait(driver, selenium_timeout).until(
+            element = WebDriverWait(driver, selenium_timeout).until(
                 EC.element_to_be_clickable((By.XPATH, "//textarea[contains(@placeholder, 'Ask a question')]"))
-            ).send_keys(" ")
+            )
+            WebDriverWait(driver, selenium_timeout).until(
+                lambda d: element.is_displayed() and element.is_enabled()
+            )
+
+            element.click()
+            element.send_keys(" ")
 
 
         inject_request_interceptor(driver, api_data_json)
