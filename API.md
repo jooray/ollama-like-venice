@@ -38,7 +38,15 @@ You can configure continue.dev with this snippet:
       "model": "llama-3.1-405b",
       "apiBase": "https://api.venice.ai/api/v1",
       "apiKey": "YOUR_VENICE_API_KEY_HERE"
-    }
+    },
+    {
+      "title": "venice qwen-coder",
+      "provider": "openai",
+      "model": "qwen32b",
+      "apiBase": "https://api.venice.ai/api/v1",
+      "apiKey": "YOUR_VENICE_API_KEY_HERE"
+    },
+
 ```
 
 Please note that you should also set up an embedding model (not provided by venice) locally if you want to use @codebase.
