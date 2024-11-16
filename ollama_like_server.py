@@ -7,8 +7,7 @@ from webdriver_manager.core.os_manager import ChromeType
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import WebDriverException
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException, WebDriverException
 from flask import Flask, request, Response
 import json
 import uuid
@@ -446,6 +445,28 @@ def login_to_venice_with_seed(seed):
     """
 
     driver.execute_script(js_click)
+
+    # Maximum wait time in seconds until the modal closes
+    max_wait_time = 60
+    start_time = time.time()
+
+    while time.time() - start_time < max_wait_time:
+        try:
+            # Check if the link is clickable
+            element = WebDriverWait(driver, selenium_timeout).until(
+                EC.element_to_be_clickable((By.LINK_TEXT, "without an account"))
+            )
+            element.click()
+            print("Link clicked successfully.")
+            break
+        except ElementClickInterceptedException:
+            # print("Element is still obstructed. Retrying...")
+            time.sleep(1)
+        except TimeoutException:
+            # print("Link is not clickable yet. Retrying...")
+            time.sleep(1)  # Wait for 1 second before retrying
+    else:
+        print("Maximum wait time exceeded. Link was not clickable.")
 
     ensure_logged_in(driver)
 
