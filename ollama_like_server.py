@@ -252,13 +252,13 @@ def inject_web3_provider(driver, seed):
                         switch (eventName) {
                             case 'accountsChanged':
                                 provider.subscriptions.set(subscriptionId, { callback });
-                                setTimeout(() => callback([wallet.address]), 4500);
+                                setTimeout(() => callback([wallet.address]), 500);
                                 break;
 
                             case 'connect':
                                 console.log('Connected to the network');
                                 provider.subscriptions.set(subscriptionId, { callback });
-                                setTimeout(() => callback({ chainId: '0xa4b1' }), 4000);
+                                setTimeout(() => callback({ chainId: '0x1' }), 500);
                                 break;
 
                             case 'message':
@@ -266,9 +266,18 @@ def inject_web3_provider(driver, seed):
                             case 'error':
                                 provider.subscriptions.set(subscriptionId, { callback });
                                 break;
+
+                            case 'chainChanged':
+                                provider.subscriptions.set(subscriptionId, { callback });
+                                setTimeout(() => callback({ chainId: '0x01' }), 500);
+                                break;
+
+                            default:
+                                console.log('Unsupported web3 event:', eventName);
+                                reject(new Error(\`Unsupported web3 event: \${eventName}\`));
                         }
 
-                        console.log(\`Called on provider.on(\${eventName}, \${callback})\`);
+                        console.log(\`Called provider.on(\${eventName}, \${callback})\`);
                     },
                     removeListener: () => {},
                 };
