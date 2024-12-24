@@ -1,6 +1,6 @@
 # API access
 
-Venice.ai has launched their official API access for Pro users (if you are not a Pro user, you can get a [lifetime Pro account here - no subscriptions needed](https://hackyourself.io/venicepro)). It uses OpenAI-compatible API.
+Venice.ai has launched their official API access for Pro users. It uses OpenAI-compatible API.
 
 ## Getting the tokens
 
