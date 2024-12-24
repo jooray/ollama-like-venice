@@ -72,7 +72,7 @@ export VENICE_PASSWORD="your-password"
 
 Replace "your-username" and "your-password" with your actual Venice credentials.
 
-If you have a life time pro account based on MOR token in your wallet, you can login using seed instead of username and password:
+You can also login using seed instead of username and password:
 
 ```bash
 export VENICE_SEED="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
