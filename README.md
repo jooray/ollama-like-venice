@@ -10,16 +10,9 @@
 
 ## Introduction
 
-This project simulates the Ollama API using Venice.ai's text generation capabilities, allowing users to access a lifetime Pro account without token fees, usage costs, or subscriptions. The project uses Selenium automation framework to interact with Venice in a clever way, making it suitable for personal inference and integration with IDEs and LLM front-ends.
+This project simulates the Ollama API using Venice.ai's text generation capabilities. The project uses Selenium automation framework to interact with Venice in a clever way, making it suitable for personal inference and integration with IDEs and LLM front-ends.
 
-**Beta official API**: Venice.ai has launched Beta API access for Pro users, so you don't need this tool anymore. I still can help you get Lifetime Pro account. Learn more about the [official API here](API.md), **including how to set it up with the tools I use**.
-
-## Venice Pro accounts for sale
-
-If you would become a lifetime Pro user on Venice, head over to the 
-[offer page](https://hackyourself.io/venicepro), the pro accounts are still on sale.
-
-Please note that currently they are seed-based (not e-mail/password), you need to check the video on how it works.
+**Beta official API**: Venice.ai has launched Beta API access for Pro users, so you don't need this tool anymore. Learn more about the [official API here](API.md), **including how to set it up with the tools I use**.
 
 ## Project discontinued
 
