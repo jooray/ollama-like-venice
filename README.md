@@ -1,5 +1,23 @@
 # Ollama-like API for Venice
 
+## No longer maintained
+
+Venice has an official API now, so this Selenium workaround is not needed. For my
+current Venice tooling see [venice-e2ee-proxy](https://github.com/jooray/venice-e2ee-proxy)
+for end-to-end encrypted requests, [venice-frontend](https://github.com/jooray/venice-frontend)
+for chat, image and video through the API, and
+[venice-image](https://github.com/jooray/venice-image) for generating images from the
+command line.
+
+For what I am building now, see my
+[project showcase](https://juraj.bednar.io/showcase/).
+
+I also write books and work on things that are not code: my cypherpunk novel
+[Tamers of Entropy](https://tamersofentropy.net/), my English podcast
+[Option Plus](https://optionplus.io/), [my blog](https://juraj.bednar.io/en/blog-en/),
+and [everything else](https://juraj.bednar.io/en). There is also
+[more about me](https://juraj.bednar.io/en/about-me/).
+
 - [Introduction](#introduction)
 - [Installation](#installation)
 - [Installation through Docker](#installation-through-docker)
